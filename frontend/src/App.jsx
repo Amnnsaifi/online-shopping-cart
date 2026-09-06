@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import './App.css'
 
 const API_BASE_URL = 'http://localhost:8080/api/v1'
@@ -23,8 +23,8 @@ function App() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          email: email,
-          password: password,
+          email,
+          password,
         }),
       })
 
@@ -38,7 +38,7 @@ function App() {
       localStorage.setItem('token', data)
       setToken(data)
       setMessage('Login successful')
-    } catch (error) {
+    } catch {
       setMessage('Backend connection failed')
     } finally {
       setLoading(false)
@@ -53,7 +53,7 @@ function App() {
     setMessage('Logged out')
   }
 
-  async function loadProducts() {
+  const loadProducts = useCallback(async () => {
     try {
       const response = await fetch(`${API_BASE_URL}/products`, {
         headers: {
@@ -68,12 +68,12 @@ function App() {
 
       const data = await response.json()
       setProducts(data)
-    } catch (error) {
+    } catch {
       setMessage('Could not connect to backend')
     }
-  }
+  }, [token])
 
-  async function loadCart() {
+  const loadCart = useCallback(async () => {
     if (!token) {
       return
     }
@@ -94,7 +94,7 @@ function App() {
     } catch (error) {
       console.error(error)
     }
-  }
+  }, [token])
 
   async function addToCart(productId) {
     try {
@@ -105,7 +105,7 @@ function App() {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          productId: productId,
+          productId,
           quantity: 1,
         }),
       })
@@ -119,7 +119,7 @@ function App() {
 
       setMessage('Product added to cart')
       await loadCart()
-    } catch (error) {
+    } catch {
       setMessage('Could not connect to backend')
     }
   }
@@ -146,7 +146,7 @@ function App() {
 
       setCart([])
       await loadProducts()
-    } catch (error) {
+    } catch {
       setMessage('Checkout failed')
     }
   }
@@ -156,8 +156,50 @@ function App() {
       return
     }
 
-    loadProducts()
-    loadCart()
+    let cancelled = false
+
+    async function loadInitialData() {
+      try {
+        const [productsResponse, cartResponse] = await Promise.all([
+          fetch(`${API_BASE_URL}/products`, {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }),
+          fetch(`${API_BASE_URL}/cart`, {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }),
+        ])
+
+        if (cancelled) {
+          return
+        }
+
+        if (productsResponse.ok) {
+          const productsData = await productsResponse.json()
+          setProducts(productsData)
+        } else {
+          setMessage('Could not load products')
+        }
+
+        if (cartResponse.ok) {
+          const cartData = await cartResponse.json()
+          setCart(cartData)
+        }
+      } catch {
+        if (!cancelled) {
+          setMessage('Could not connect to backend')
+        }
+      }
+    }
+
+    loadInitialData()
+
+    return () => {
+      cancelled = true
+    }
   }, [token])
 
   const cartTotal = cart.reduce((total, item) => {
